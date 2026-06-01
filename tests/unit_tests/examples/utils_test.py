@@ -20,6 +20,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
+import pytest
 import yaml
 
 
@@ -204,3 +205,24 @@ def test_load_examples_from_configs_defaults(
         force_data=False,
     )
     mock_command.run.assert_called_once()
+
+
+def test_load_configs_from_directory_uses_safe_yaml_loading() -> None:
+    """load_configs_from_directory() must use yaml.safe_load, rejecting
+    arbitrary Python object construction in YAML metadata.
+
+    A malicious metadata.yaml containing ``!!python/object/apply:os.system``
+    must raise a yaml.constructor.ConstructorError rather than executing code.
+    """
+    from superset.examples.utils import load_configs_from_directory
+
+    malicious_yaml = '!!python/object/apply:os.system ["echo pwned"]'
+
+    with TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        metadata_file = root / "metadata.yaml"
+        metadata_file.write_text(malicious_yaml)
+
+        with pytest.raises(yaml.constructor.ConstructorError):
+            with patch("superset.examples.utils.ImportExamplesCommand"):
+                load_configs_from_directory(root)
