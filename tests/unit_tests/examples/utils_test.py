@@ -204,3 +204,57 @@ def test_load_examples_from_configs_defaults(
         force_data=False,
     )
     mock_command.run.assert_called_once()
+
+
+def test_load_configs_from_directory_uses_safe_yaml_loading() -> None:
+    """load_configs_from_directory() must use yaml.safe_load, not yaml.load.
+
+    yaml.load with yaml.Loader allows arbitrary Python object instantiation
+    from untrusted YAML, enabling remote code execution (CWE-502, Bandit B506).
+    This test parses the source file's AST to verify yaml.safe_load is used
+    and yaml.load is absent in load_configs_from_directory.
+    """
+    import ast
+
+    source_path = (
+        Path(__file__).resolve().parents[3] / "superset" / "examples" / "utils.py"
+    )
+    source = source_path.read_text()
+    tree = ast.parse(source)
+
+    # Find the load_configs_from_directory function node
+    func_node = None
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.FunctionDef)
+            and node.name == "load_configs_from_directory"
+        ):
+            func_node = node
+            break
+
+    assert func_node is not None, "load_configs_from_directory not found in utils.py"
+
+    unsafe_calls: list[int] = []
+    safe_calls: list[int] = []
+
+    for node in ast.walk(func_node):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "yaml"
+            ):
+                if func.attr == "load":
+                    unsafe_calls.append(node.lineno)
+                elif func.attr == "safe_load":
+                    safe_calls.append(node.lineno)
+
+    assert not unsafe_calls, (
+        f"yaml.load() found at line(s) {unsafe_calls} in load_configs_from_directory — "
+        "use yaml.safe_load() to prevent arbitrary code execution"
+    )
+    assert safe_calls, (
+        "yaml.safe_load() not found in load_configs_from_directory — "
+        "metadata must be parsed with yaml.safe_load()"
+    )
