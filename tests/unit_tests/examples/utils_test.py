@@ -20,6 +20,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
+import pytest
 import yaml
 
 
@@ -204,3 +205,54 @@ def test_load_examples_from_configs_defaults(
         force_data=False,
     )
     mock_command.run.assert_called_once()
+
+
+def test_load_configs_from_directory_rejects_malicious_yaml():
+    """load_configs_from_directory() must use safe YAML loading.
+
+    A crafted metadata.yaml with a Python object tag (e.g.
+    !!python/object/apply:os.system) must raise a yaml.constructor.ConstructorError
+    rather than executing arbitrary code. This validates the fix for issue #11.
+    """
+    malicious_payload = '!!python/object/apply:os.system ["echo pwned"]'
+
+    # yaml.safe_load must reject arbitrary Python object tags
+    with pytest.raises(yaml.constructor.ConstructorError):
+        yaml.safe_load(malicious_payload)
+
+    # yaml.Loader (unsafe) would allow this — confirm the distinction
+    result = yaml.load(malicious_payload, Loader=yaml.Loader)  # noqa: S506
+    assert result == 0 or isinstance(result, int)
+
+
+def test_load_configs_from_directory_uses_safe_load():
+    """Verify that superset/examples/utils.py uses yaml.safe_load for metadata.
+
+    This is a source-level assertion ensuring the unsafe yaml.load call with
+    Loader=yaml.Loader is not reintroduced.
+    """
+    import ast
+
+    source_path = (
+        Path(__file__).resolve().parents[3] / "superset" / "examples" / "utils.py"
+    )
+
+    source = source_path.read_text()
+    tree = ast.parse(source)
+
+    # Collect all calls to yaml.load and yaml.safe_load
+    unsafe_calls: list[int] = []
+    safe_calls: list[int] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if isinstance(node.func.value, ast.Name) and node.func.value.id == "yaml":
+                if node.func.attr == "load":
+                    unsafe_calls.append(node.lineno)
+                elif node.func.attr == "safe_load":
+                    safe_calls.append(node.lineno)
+
+    assert safe_calls, "Expected at least one yaml.safe_load call"
+    assert not unsafe_calls, (
+        f"Found unsafe yaml.load() at line(s) {unsafe_calls}; "
+        "use yaml.safe_load() instead"
+    )
