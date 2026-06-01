@@ -108,6 +108,15 @@ beforeEach(() => {
   window.localStorage.removeItem(LocalStorageKeys.HomepageChartFilter);
 });
 
+test('does not crash when otherTabData is undefined', async () => {
+  const propsWithoutOtherTabData = {
+    ...mockedProps,
+    otherTabData: undefined,
+  };
+  await renderChartTable(propsWithoutOtherTabData);
+  expect(screen.getAllByRole('tab')).toHaveLength(3);
+});
+
 test('renders with EmptyState if no data present', async () => {
   await renderChartTable(mockedProps);
   expect(screen.getAllByRole('tab')).toHaveLength(3);

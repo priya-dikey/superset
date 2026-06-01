@@ -77,7 +77,7 @@ function ChartTable({
     TableTab.Other,
   );
 
-  const filteredOtherTabData = otherTabData.filter(obj => 'viz_type' in obj);
+  const filteredOtherTabData = otherTabData?.filter(obj => 'viz_type' in obj);
 
   const {
     state: { loading, resourceCollection: charts, bulkSelectEnabled },
