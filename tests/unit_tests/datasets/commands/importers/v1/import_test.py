@@ -815,7 +815,13 @@ def test_import_dataset_access_check(
         (["*"], "https://host1.domain3.com/data.csv", False, re.error),
     ],
 )
-def test_validate_data_uri(allowed_urls, data_uri, expected, exception_class):
+@patch(
+    "superset.commands.dataset.importers.v1.utils._is_private_address",
+    return_value=False,
+)
+def test_validate_data_uri(
+    mock_private, allowed_urls, data_uri, expected, exception_class
+):
     current_app.config["DATASET_IMPORT_ALLOWED_DATA_URLS"] = allowed_urls
     if expected:
         validate_data_uri(data_uri)

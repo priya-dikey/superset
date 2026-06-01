@@ -2292,7 +2292,7 @@ PREVENT_UNSAFE_DEFAULT_URLS_ON_DATASET = True
 # ALLOWED_IMPORT_URL_DOMAINS = [
 #     r"^https://.+\.domain1\.com\/?.*", r"^https://.+\.domain2\.com\/?.*"
 # ]
-DATASET_IMPORT_ALLOWED_DATA_URLS = [r".*"]
+DATASET_IMPORT_ALLOWED_DATA_URLS: list[str] = []
 
 # Path used to store SSL certificates that are generated when using custom certs.
 # Defaults to temporary directory.
