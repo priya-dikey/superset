@@ -15,10 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 import gzip
+import ipaddress
 import logging
 import re
+import socket
 from typing import Any
 from urllib import request
+from urllib.parse import urlparse
 
 import pandas as pd
 from flask import current_app as app
@@ -85,14 +88,40 @@ def get_dtype(df: pd.DataFrame, dataset: SqlaTable) -> dict[str, VisitableType]:
     }
 
 
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _is_private_address(hostname: str) -> bool:
+    """Return True if hostname resolves to a private/reserved IP address."""
+    try:
+        addr = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for _family, _, _, _, sockaddr in addr:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return True
+    except (socket.gaierror, ValueError):
+        return True
+    return False
+
+
 def validate_data_uri(data_uri: str) -> None:
     """
-    Validate that the data URI is configured on DATASET_IMPORT_ALLOWED_URLS
-    has a valid URL.
+    Validate that the data URI uses an allowed scheme, does not target a
+    private/internal network address, and matches the configured allowlist
+    in DATASET_IMPORT_ALLOWED_DATA_URLS.
 
-    :param data_uri:
-    :return:
+    :param data_uri: The URL to validate.
+    :raises DatasetForbiddenDataURI: If the URI is not permitted.
     """
+    parsed = urlparse(data_uri)
+
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise DatasetForbiddenDataURI()
+
+    hostname = parsed.hostname
+    if not hostname or _is_private_address(hostname):
+        raise DatasetForbiddenDataURI()
+
     allowed_urls = app.config["DATASET_IMPORT_ALLOWED_DATA_URLS"]
     for allowed_url in allowed_urls:
         try:
